@@ -4,8 +4,7 @@ langchain
 torch
 torchvision 
 sentence-transformers 
-scikit-learn 
-chromadb  
+scikit-learn   
 pypdf  
 nbconvert  
 ipython  
@@ -13,3 +12,5 @@ matplotlib
 seaborn 
 pandas 
 python-dotenv
+protobuf==4.25.3
+chromadb==0.4.24
