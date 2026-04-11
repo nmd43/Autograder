@@ -12,5 +12,6 @@ matplotlib
 seaborn 
 pandas 
 python-dotenv
+numpy<2.0.0
+chromadb==0.5.0
 protobuf==4.25.3
-chromadb==0.4.24
