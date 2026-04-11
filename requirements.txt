@@ -1,0 +1,15 @@
+streamlit
+google-genai  
+langchain
+torch
+torchvision 
+sentence-transformers 
+scikit-learn 
+chromadb  
+pypdf  
+nbconvert  
+ipython  
+matplotlib  
+seaborn 
+pandas 
+python-dotenv
