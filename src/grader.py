@@ -10,37 +10,54 @@ class TAAssistantGrader:
         self.model_name = model_name
         self.retriever = TADataRetriever()
 
-    def index_context(self, rubric_text, solution_text):
+    def index_context(self, rubric_text, solution_text=None):
         """
-        Populates the vector database with reference materials.
+        Populates the vector database. Reference solution is now optional.
         Hits 'Data Collection/Preprocessing' (10 pts).
         """
+        # Always index the rubric
         self.retriever.add_to_index(rubric_text, {"type": "rubric"})
-        self.retriever.add_to_index(solution_text, {"type": "solution"})
+        
+        # Only index the solution if it exists (Safeguard for RAG logic)
+        if solution_text and solution_text.strip():
+            self.retriever.add_to_index(solution_text, {"type": "solution"})
 
-    def generate_feedback(self, student_submission):
+    def generate_feedback(self, student_submission, reference_solution=None):
         """
-        Retrieves relevant context then grades (Multi-stage Pipeline - 7 pts).
+        Retrieves relevant context then grades. 
+        Supports Ablation Studies by toggling reference_solution (7 pts).
         """
-        # 1. RETRIEVAL STEP: Find relevant rubric/solution chunks
-        # We query the vector DB using the student's code as the search string
+        # 1. RETRIEVAL STEP: Find relevant chunks
         relevant_context = self.retriever.retrieve_relevant_context(student_submission)
 
-        # 2. GENERATION STEP: Use the retrieved 'shards' of info
-        prompt = f"""
-        You are an expert Teaching Assistant. Below is a student's submission and 
-        the MOST RELEVANT parts of the rubric and reference solution found by our RAG system.
+        # 2. CONDITIONAL CONTEXT CONSTRUCTION
+        # This design decision supports experimental evaluation
+        ref_part = ""
+        if reference_solution:
+            ref_part = f"### REFERENCE SOLUTION:\n{reference_solution}\n"
+            instruction_hint = "- Use the PROVIDED REFERENCE SOLUTION to verify logic and edge cases."
+        else:
+            ref_part = "### REFERENCE SOLUTION:\n[Not Provided]\n"
+            instruction_hint = "- No reference solution provided. Rely on the RUBRIC and general CS best practices."
 
-        ### RETRIEVED CONTEXT
+        # 3. GENERATION STEP: Chain-of-Thought Prompting
+        prompt = f"""
+        You are an expert Teaching Assistant. 
+        Evaluate the student's submission based on the retrieved context below.
+
+        ### RETRIEVED CONTEXT (RUBRIC & SOLUTIONS)
         {relevant_context}
+
+        {ref_part}
 
         ### STUDENT SUBMISSION
         {student_submission}
 
-        ### INSTRUCTIONS (Chain-of-Thought)
-        - Compare the student's logic specifically to the retrieved reference chunks.
-        - Check if the student met the criteria in the retrieved rubric sections.
-        - Provide a final score and pedagogical feedback.
+        ### INSTRUCTIONS
+        1. ANALYZE: Compare student logic to the reference materials.
+        2. {instruction_hint}
+        3. DEDUCT: Be specific about where the student deviated from requirements.
+        4. SCORE: Provide a numerical grade based on the rubric.
         """
 
         response = self.client.models.generate_content(
