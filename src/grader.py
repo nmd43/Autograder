@@ -4,7 +4,7 @@ from google.genai import types
 from src.retriever import TADataRetriever
 
 class TAAssistantGrader:
-    def __init__(self, api_key, model_name="gemini-1.5-flash"):
+    def __init__(self, api_key, model_name="gemini-2.5-flash"):
         """Initializes the Gemini client and the RAG retriever."""
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name

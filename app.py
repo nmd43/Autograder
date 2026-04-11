@@ -14,7 +14,7 @@ parser = TASystemParser()
 with st.sidebar:
     st.header("Configuration")
     api_key = st.text_input("Gemini API Key", type="password")
-    model_choice = st.selectbox("Select Model", ["gemini-1.5-flash", "gemini-1.5-pro"])
+    model_choice = st.selectbox("Select Model", ["gemini-2.5-flash", "gemini-1.5-pro"])
     st.info("This RAG system uses ChromaDB for local vector storage.")
 
 # 3. File Uploaders
