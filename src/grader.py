@@ -40,6 +40,7 @@ class TAAssistantGrader:
         """Full first-turn user message (stored in chat history for multi-turn continuity)."""
         relevant_context = self.retriever.retrieve_relevant_context(student_submission)
         ref_part, instruction_hint = self._reference_block(reference_solution)
+        evidence_hint = instruction_hint.lstrip("- ").strip()
         return f"""
         You are an expert Teaching Assistant.
         Evaluate the student's submission based on the retrieved context below.
@@ -52,11 +53,15 @@ class TAAssistantGrader:
         ### STUDENT SUBMISSION
         {student_submission}
 
-        ### INSTRUCTIONS
-        1. ANALYZE: Compare student logic to the reference materials.
-        2. {instruction_hint}
-        3. DEDUCT: Be specific about where the student deviated from requirements.
-        4. SCORE: Provide a numerical grade based on the rubric.
+        ### CHAIN-OF-THOUGHT (REQUIRED)
+        Show your reasoning **in this order** before any final score. Use clear headings or numbered steps.
+
+        1. **Rubric alignment:** Which rubric criteria apply and what each requires.
+        2. **Evidence:** What the student actually did (cite submission specifics). {evidence_hint}
+        3. **Gap analysis:** Where the work meets, partially meets, or misses the rubric (and why).
+        4. **Numerical score:** Only after steps 1–3, state a **numerical grade** tied explicitly to the rubric.
+
+        Do not give the final score until after the reasoning above.
         """
 
     def generate_feedback(self, student_submission, reference_solution=None):
@@ -114,7 +119,10 @@ class TAAssistantGrader:
                         "### RETRIEVED CONTEXT (for this follow-up)\n"
                         f"{retrieved}\n\n"
                         "### USER MESSAGE\n"
-                        f"{text}"
+                        f"{text}\n\n"
+                        "### RESPONSE STYLE\n"
+                        "Use explicit chain-of-thought: ordered reasoning first, then conclusions "
+                        "or any revised score last."
                     )
                 contents.append(
                     types.Content(role="user", parts=[types.Part(text=text)])
