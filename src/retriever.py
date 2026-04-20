@@ -1,7 +1,20 @@
 import chromadb
 from chromadb.utils import embedding_functions
-from sentence_transformers import SentenceTransformer
 import uuid
+
+# MS MARCO-trained cross-encoder; lazy-loaded so import stays light.
+_CROSS_ENCODER = None
+_CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+
+def _get_cross_encoder():
+    global _CROSS_ENCODER
+    if _CROSS_ENCODER is None:
+        from sentence_transformers import CrossEncoder
+
+        _CROSS_ENCODER = CrossEncoder(_CROSS_ENCODER_MODEL)
+    return _CROSS_ENCODER
+
 
 class TADataRetriever:
     """Manages the vector database for custom RAG logic (10 pts)."""
@@ -20,6 +33,13 @@ class TADataRetriever:
             name="grading_context",
             embedding_function=self.embed_fn
         )
+
+    def clear_index(self):
+        """Removes all documents so a new grading run does not stack duplicate chunks."""
+        batch = self.collection.get(include=[])
+        ids = batch.get("ids") or []
+        if ids:
+            self.collection.delete(ids=ids)
 
     def add_to_index(self, text, metadata):
         """Chunks text and adds it to the vector store (Substantive Preprocessing - 7 pts)."""
@@ -42,11 +62,26 @@ class TADataRetriever:
             chunks.append(text[i:i + size])
         return chunks
 
-    def retrieve_relevant_context(self, query, top_k=3):
-        """Retrieves top-k similar chunks (Semantic Similarity - 5 pts)."""
+    def retrieve_relevant_context(self, query, top_k=3, candidate_k=24):
+        """
+        Two-stage retrieval: dense similarity (Chroma), then cross-encoder reranking.
+        Improves which rubric/solution passages surface for grading-style queries.
+        """
+        n_docs = self.collection.count()
+        if n_docs == 0:
+            return ""
+        fetch_k = min(n_docs, max(top_k, candidate_k))
         results = self.collection.query(
             query_texts=[query],
-            n_results=top_k
+            n_results=fetch_k,
         )
-        # Join retrieved documents into a single string for the LLM
-        return "\n\n".join(results['documents'][0])
+        docs = results["documents"][0]
+        if not docs:
+            return ""
+
+        ce = _get_cross_encoder()
+        pairs = [[query, d] for d in docs]
+        scores = ce.predict(pairs, show_progress_bar=False)
+        order = sorted(range(len(docs)), key=lambda i: scores[i], reverse=True)
+        top_docs = [docs[i] for i in order[:top_k]]
+        return "\n\n".join(top_docs)

@@ -1,84 +1,223 @@
+import hashlib
 import streamlit as st
 import os
+import uuid
 from src.parser import TASystemParser
 from src.grader import TAAssistantGrader
+from src.retriever import TADataRetriever
 
-# 1. Page Configuration
 st.set_page_config(page_title="AI TA Grader", layout="wide")
 st.title("🎓 Automated TA Grading Assistant")
 
-# Initialize the Parser (Modular Design - 3 pts)
 parser = TASystemParser()
 
-# 2. Sidebar for API Keys & Config
+
+def _init_session_state():
+    if "chat_messages" not in st.session_state:
+        st.session_state.chat_messages = []
+    if "session_ctx" not in st.session_state:
+        st.session_state.session_ctx = None
+    if "ref_fingerprint" not in st.session_state:
+        st.session_state.ref_fingerprint = None
+    if "ref_cache" not in st.session_state:
+        st.session_state.ref_cache = None
+
+
+def _file_fingerprint(uploaded_file):
+    h = hashlib.sha256()
+    h.update(os.path.basename(uploaded_file.name).encode("utf-8"))
+    h.update(uploaded_file.getbuffer().tobytes())
+    return h.hexdigest()
+
+
+def reference_fingerprint(rubric_files, solution_file):
+    h = hashlib.sha256()
+    for uf in sorted(rubric_files, key=lambda u: u.name):
+        h.update(_file_fingerprint(uf).encode("ascii"))
+    h.update(b"|nosol|" if solution_file is None else b"|sol|")
+    if solution_file is not None:
+        h.update(_file_fingerprint(solution_file).encode("ascii"))
+    return h.hexdigest()
+
+
+_init_session_state()
+
+
+def save_and_parse(uploaded_file):
+    safe_name = os.path.basename(uploaded_file.name).replace(os.sep, "_")
+    temp_path = f"temp_ag_{uuid.uuid4().hex}_{safe_name}"
+    with open(temp_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    try:
+        if temp_path.endswith(".pdf"):
+            content = parser.parse_pdf(temp_path)
+        elif temp_path.endswith(".ipynb"):
+            content = parser.parse_jupyter_notebook(temp_path)
+        else:
+            content = parser.parse_python_file(temp_path)
+    finally:
+        if os.path.isfile(temp_path):
+            os.remove(temp_path)
+    return content
+
+
+def combine_uploaded_text(uploaded_list, section_title):
+    parts = []
+    for uf in uploaded_list:
+        parts.append(f"### {section_title}: {uf.name}\n\n{save_and_parse(uf)}")
+    return "\n\n".join(parts)
+
+
 with st.sidebar:
     st.header("Configuration")
     api_key = st.text_input("Gemini API Key", type="password")
     model_choice = st.selectbox("Select Model", ["gemini-2.5-flash", "gemini-1.5-pro"])
+    st.slider(
+        "Follow-up turns kept in model context",
+        min_value=2,
+        max_value=24,
+        value=12,
+        key="max_followup_turns",
+        help="After the initial grade, only the last N user/assistant pairs are sent "
+        "plus the full first exchange, to stay within context limits.",
+    )
+    st.markdown("**Grading workflow**")
+    if st.button(
+        "Done — next student",
+        type="primary",
+        help="Clears chat and the current student from this session. "
+        "Rubric and sample solution stay indexed for the next Generate.",
+    ):
+        st.session_state.chat_messages = []
+        st.session_state.session_ctx = None
+        st.success("Ready for the next student. Click Generate after uploading their work.")
+    if st.button(
+        "Clear rubric & solution from index",
+        type="secondary",
+        help="Wipes the vector store and cached reference text. Use when the assignment "
+        "changes. Re-upload files and Generate to index again.",
+    ):
+        TADataRetriever().clear_index()
+        st.session_state.ref_fingerprint = None
+        st.session_state.ref_cache = None
+        st.session_state.chat_messages = []
+        st.session_state.session_ctx = None
+        st.success("Reference index and chat cleared.")
     st.info("This RAG system uses ChromaDB for local vector storage.")
 
-# 3. File Uploaders
-# 3. File Uploaders
 col1, col2 = st.columns(2)
 with col1:
     st.subheader("Reference Materials")
-    rubric_file = st.file_uploader("Upload Rubric (PDF)", type=["pdf"])
-    # Reference solution is now explicitly marked as optional
-    solution_file = st.file_uploader("Upload Reference Solution (Optional)", type=["pdf", "py", "ipynb"])
+    rubric_files = st.file_uploader(
+        "Upload Rubric (PDF) — multiple files allowed",
+        type=["pdf"],
+        accept_multiple_files=True,
+    )
+    solution_file = st.file_uploader(
+        "Upload Reference Solution (Optional)", type=["pdf", "py", "ipynb"]
+    )
 
 with col2:
     st.subheader("Student Submission")
-    student_file = st.file_uploader("Upload Student Work", type=["pdf", "py", "ipynb"])
+    student_files = st.file_uploader(
+        "Upload Student Work — multiple files allowed",
+        type=["pdf", "py", "ipynb"],
+        accept_multiple_files=True,
+    )
 
-# 4. Processing Logic
+st.caption(
+    "When you finish one student, use **Done — next student** in the sidebar, "
+    "upload the next submission, and **Generate** again (rubric / sample solution stay indexed)."
+)
+
 if st.button("Generate RAG-Powered Grade"):
     if not api_key:
         st.error("Please enter a Gemini API key.")
-    # UPDATED: Only require rubric and student file
-    elif not (rubric_file and student_file):
-        st.warning("Rubric and Student Work are required.")
+    elif not rubric_files or not student_files:
+        st.warning("Rubric and Student Work are required (at least one file each).")
     else:
         try:
             grader = TAAssistantGrader(api_key=api_key, model_name=model_choice)
-            
-            with st.spinner("Step 1: Parsing and Indexing Materials..."):
-                def save_and_parse(uploaded_file):
-                    temp_path = f"temp_{uploaded_file.name}"
-                    with open(temp_path, "wb") as f:
-                        f.write(uploaded_file.getbuffer())
-                    
-                    if temp_path.endswith('.pdf'):
-                        content = parser.parse_pdf(temp_path)
-                    elif temp_path.endswith('.ipynb'):
-                        content = parser.parse_jupyter_notebook(temp_path)
-                    else:
-                        content = parser.parse_python_file(temp_path)
-                    
-                    os.remove(temp_path)
-                    return content
+            ref_fp = reference_fingerprint(rubric_files, solution_file)
+            ref_changed = (
+                st.session_state.ref_fingerprint != ref_fp
+                or st.session_state.ref_cache is None
+            )
 
-                # Always parse and index rubric
-                rubric_text = save_and_parse(rubric_file)
-                
-                # UPDATED: Handle optional solution parsing and indexing
-                solution_text = None
-                if solution_file:
-                    solution_text = save_and_parse(solution_file)
-                
-                # Pass solution_text (which might be None) to the grader
-                grader.index_context(rubric_text, solution_text)
+            if ref_changed:
+                with st.spinner("Indexing rubric & reference solution..."):
+                    rubric_text = combine_uploaded_text(rubric_files, "RUBRIC FILE")
+                    solution_text = (
+                        save_and_parse(solution_file) if solution_file else None
+                    )
+                    grader.index_context(rubric_text, solution_text, replace_existing=True)
+                    st.session_state.ref_fingerprint = ref_fp
+                    st.session_state.ref_cache = {"solution_text": solution_text}
+            else:
+                solution_text = (
+                    st.session_state.ref_cache.get("solution_text")
+                    if st.session_state.ref_cache
+                    else None
+                )
 
-            with st.spinner("Step 2: Retrieving Context and Generating Feedback..."):
-                student_text = save_and_parse(student_file)
-                # UPDATED: Pass solution_text to allow the grader to adjust its prompt
-                feedback = grader.generate_feedback(student_text, reference_solution=solution_text)
-                
-            st.success("Grading Complete!")
-            st.markdown("### 📝 RAG-Augmented Feedback")
-            st.markdown(feedback)
-            
+            with st.spinner("Retrieving context and generating feedback..."):
+                student_text = combine_uploaded_text(student_files, "STUDENT FILE")
+                feedback, initial_prompt = grader.generate_feedback(
+                    student_text, reference_solution=solution_text
+                )
+
+            st.session_state.session_ctx = {"student_text": student_text}
+            st.session_state.chat_messages = [
+                {"role": "user", "content": initial_prompt},
+                {"role": "assistant", "content": feedback},
+            ]
+            st.success("Grading complete — you can continue in the chat below.")
         except Exception as e:
             st.error(f"An error occurred: {e}")
+
+st.divider()
+st.subheader("Grading conversation")
+st.caption(
+    "History is kept until you start the next student. Follow-up questions reuse the "
+    "current submission and refresh rubric retrieval for each message."
+)
+
+if st.session_state.chat_messages:
+    for msg in st.session_state.chat_messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+else:
+    st.info("Run **Generate RAG-Powered Grade** to create the first review and open the chat.")
+
+if prompt := st.chat_input(
+    "Ask a follow-up (e.g. clarify a rubric item, suggest fixes, or challenge the score)"
+):
+    if not api_key:
+        st.error("Please enter a Gemini API key in the sidebar.")
+    elif not st.session_state.session_ctx:
+        st.warning("Generate a grade first so there is context to discuss.")
+    else:
+        try:
+            ctx = st.session_state.session_ctx
+            grader = TAAssistantGrader(api_key=api_key, model_name=model_choice)
+            st.session_state.chat_messages.append({"role": "user", "content": prompt})
+            with st.spinner("Thinking..."):
+                reply = grader.generate_chat_reply(
+                    st.session_state.chat_messages,
+                    ctx["student_text"],
+                    max_followup_turns=st.session_state.max_followup_turns,
+                )
+            st.session_state.chat_messages.append(
+                {"role": "assistant", "content": reply}
+            )
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
+            if (
+                st.session_state.chat_messages
+                and st.session_state.chat_messages[-1].get("role") == "user"
+                and st.session_state.chat_messages[-1].get("content") == prompt
+            ):
+                st.session_state.chat_messages.pop()
 
 st.divider()
 st.caption("CS 372 Final Project - Modular RAG Grading System")
