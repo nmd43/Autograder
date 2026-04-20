@@ -21,6 +21,10 @@ def _init_session_state():
         st.session_state.ref_fingerprint = None
     if "ref_cache" not in st.session_state:
         st.session_state.ref_cache = None
+    # Bump to remount st.file_uploader and clear widget file list (Streamlit has no direct clear API).
+    for _k in ("rubric_upload_id", "solution_upload_id", "student_upload_id"):
+        if _k not in st.session_state:
+            st.session_state[_k] = 0
 
 
 def _file_fingerprint(uploaded_file):
@@ -90,7 +94,10 @@ with st.sidebar:
     ):
         st.session_state.chat_messages = []
         st.session_state.session_ctx = None
-        st.success("Ready for the next student. Click Generate after uploading their work.")
+        st.session_state.student_upload_id = (
+            st.session_state.get("student_upload_id", 0) + 1
+        )
+        st.success("Ready for the next student. Upload new student files, then Generate.")
     if st.button(
         "Clear rubric & solution from index",
         type="secondary",
@@ -102,7 +109,16 @@ with st.sidebar:
         st.session_state.ref_cache = None
         st.session_state.chat_messages = []
         st.session_state.session_ctx = None
-        st.success("Reference index and chat cleared.")
+        st.session_state.rubric_upload_id = (
+            st.session_state.get("rubric_upload_id", 0) + 1
+        )
+        st.session_state.solution_upload_id = (
+            st.session_state.get("solution_upload_id", 0) + 1
+        )
+        st.session_state.student_upload_id = (
+            st.session_state.get("student_upload_id", 0) + 1
+        )
+        st.success("Reference index cleared; all upload widgets reset.")
     st.info("This RAG system uses ChromaDB for local vector storage.")
 
 col1, col2 = st.columns(2)
@@ -112,9 +128,12 @@ with col1:
         "Upload Rubric (PDF) — multiple files allowed",
         type=["pdf"],
         accept_multiple_files=True,
+        key=f"rubric_files_{st.session_state.rubric_upload_id}",
     )
     solution_file = st.file_uploader(
-        "Upload Reference Solution (Optional)", type=["pdf", "py", "ipynb"]
+        "Upload Reference Solution (Optional)",
+        type=["pdf", "py", "ipynb"],
+        key=f"solution_file_{st.session_state.solution_upload_id}",
     )
 
 with col2:
@@ -123,6 +142,7 @@ with col2:
         "Upload Student Work — multiple files allowed",
         type=["pdf", "py", "ipynb"],
         accept_multiple_files=True,
+        key=f"student_files_{st.session_state.student_upload_id}",
     )
 
 st.caption(
@@ -183,9 +203,15 @@ st.caption(
 )
 
 if st.session_state.chat_messages:
-    for msg in st.session_state.chat_messages:
+    for i, msg in enumerate(st.session_state.chat_messages):
         with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+            if i == 0 and msg["role"] == "user":
+                st.caption(
+                    "Initial prompt (full rubric context + submission) was sent to the model — "
+                    "hidden here to keep the chat readable."
+                )
+            else:
+                st.markdown(msg["content"])
 else:
     st.info("Run **Generate RAG-Powered Grade** to create the first review and open the chat.")
 

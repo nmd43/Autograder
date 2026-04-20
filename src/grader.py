@@ -53,15 +53,26 @@ class TAAssistantGrader:
         ### STUDENT SUBMISSION
         {student_submission}
 
-        ### CHAIN-OF-THOUGHT (REQUIRED)
-        Show your reasoning **in this order** before any final score. Use clear headings or numbered steps.
+        ### OUTPUT FORMAT (REQUIRED — follow exactly)
+        Your reply must be easy to scan. Use **only** the structure below (no long prose blocks).
 
-        1. **Rubric alignment:** Which rubric criteria apply and what each requires.
-        2. **Evidence:** What the student actually did (cite submission specifics). {evidence_hint}
-        3. **Gap analysis:** Where the work meets, partially meets, or misses the rubric (and why).
-        4. **Numerical score:** Only after steps 1–3, state a **numerical grade** tied explicitly to the rubric.
+        **1) Brief reasoning (short)**  
+        At most **5 bullet lines** total for: what you checked and how it maps to the rubric. {evidence_hint}
 
-        Do not give the final score until after the reasoning above.
+        **2) Rubric scorecard (markdown table)**  
+        Build one row per **rubric section or criterion** you can identify from the RETRIEVED CONTEXT (mirror the rubric’s section names and point values when they appear there).
+
+        | Section / criterion | Earned | Max | Feedback (one line only) |
+        |---------------------|--------|-----|---------------------------|
+        | ...                 | n      | m   | Single sentence ≤ 25 words. |
+
+        - **Earned** and **Max** must be numeric when the rubric states points; if unclear, use `?` for Max and explain in that row’s one-line feedback.
+        - **Feedback** column: **exactly one line per row** — no paragraphs, no bullet lists inside a cell.
+
+        **3) Total**  
+        One line: `**Total:** X / Y` where Y is the sum of Max column (or rubric total if stated).
+
+        Do not repeat the student submission or rubric text in your answer. Do not add extra sections beyond 1–3.
         """
 
     def generate_feedback(self, student_submission, reference_solution=None):
@@ -121,8 +132,9 @@ class TAAssistantGrader:
                         "### USER MESSAGE\n"
                         f"{text}\n\n"
                         "### RESPONSE STYLE\n"
-                        "Use explicit chain-of-thought: ordered reasoning first, then conclusions "
-                        "or any revised score last."
+                        "Answer briefly: at most 3 short bullets if needed, then if scores change use the same "
+                        "markdown table (Section | Earned | Max | one-line feedback) and one-line **Total:** X / Y. "
+                        "No paragraphs per rubric row."
                     )
                 contents.append(
                     types.Content(role="user", parts=[types.Part(text=text)])
