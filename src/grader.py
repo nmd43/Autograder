@@ -1,9 +1,84 @@
+import re
+
 from google import genai
 from google.genai import types
 from src.retriever import TADataRetriever
 
 # Gemini expects "model" for assistant turns in multi-turn contents.
 _ASSISTANT_ROLE = "model"
+
+
+def _extract_rubric_points(full_rubric_text: str):
+    """
+    Best-effort extraction of question/subquestion max points from a rubric.
+    Returns (rows, total_max) where rows is [{label, max_points}].
+    """
+    text = full_rubric_text or ""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+    # Total points line (most rubrics include this explicitly).
+    total_max = None
+    total_patterns = [
+        r"\bTOTAL\s*(POINTS|PTS)\b[^0-9]{0,20}(\d+)\b",
+        r"\bTOTAL\b[^0-9]{0,20}(\d+)\b",
+        r"\bOUT\s+OF\b[^0-9]{0,20}(\d+)\b",
+    ]
+    for ln in lines[:200]:
+        for pat in total_patterns:
+            m = re.search(pat, ln, flags=re.IGNORECASE)
+            if m:
+                total_max = int(m.group(m.lastindex))
+                break
+        if total_max is not None:
+            break
+
+    # Question / Part / Subpart patterns.
+    label_patterns = [
+        r"\b(Q(?:UESTION)?\s*\d+)\b",
+        r"\b(PART\s*[A-Z])\b",
+        r"\b(\d+\.)\b",
+        r"\b([A-Z]\))\b",
+    ]
+    pts_patterns = [
+        r"\((\d+)\s*(?:PTS?|POINTS?)\)",
+        r"\b(\d+)\s*(?:PTS?|POINTS?)\b",
+        r"\b(\d+)\s*/\s*(\d+)\b",  # earned/max style; we use max
+    ]
+
+    rows = []
+    seen = set()
+    for ln in lines:
+        label = None
+        for lp in label_patterns:
+            lm = re.search(lp, ln, flags=re.IGNORECASE)
+            if lm:
+                label = lm.group(1).upper().replace("QUESTION", "Q").strip()
+                break
+        if not label:
+            continue
+
+        max_pts = None
+        for pp in pts_patterns:
+            pm = re.search(pp, ln, flags=re.IGNORECASE)
+            if not pm:
+                continue
+            if pm.lastindex == 2:
+                max_pts = int(pm.group(2))
+            else:
+                max_pts = int(pm.group(1))
+            break
+
+        if max_pts is None:
+            continue
+
+        key = (label, max_pts)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append({"label": label, "max_points": max_pts})
+
+    # Preserve order of appearance; if the rubric is Q1/Q2-based, that order matters.
+    return rows, total_max
 
 
 class TAAssistantGrader:
@@ -36,16 +111,35 @@ class TAAssistantGrader:
             instruction_hint = "- No reference solution provided. Rely on the RUBRIC and general CS best practices."
         return ref_part, instruction_hint
 
-    def build_initial_grading_prompt(self, student_submission, reference_solution=None):
+    def build_initial_grading_prompt(
+        self,
+        student_submission,
+        full_rubric_text,
+        reference_solution=None,
+    ):
         """Full first-turn user message (stored in chat history for multi-turn continuity)."""
         relevant_context = self.retriever.retrieve_relevant_context(student_submission)
         ref_part, instruction_hint = self._reference_block(reference_solution)
         evidence_hint = instruction_hint.lstrip("- ").strip()
+        rubric_rows, rubric_total = _extract_rubric_points(full_rubric_text)
+        rubric_outline = "\n".join(
+            [f"- {r['label']}: {r['max_points']} pts" for r in rubric_rows]
+        ) or "- [Could not auto-extract question totals; use the FULL RUBRIC headings and point values.]"
+        rubric_total_line = (
+            f"{rubric_total} pts" if isinstance(rubric_total, int) else "[Not detected]"
+        )
         return f"""
         You are an expert Teaching Assistant.
-        Evaluate the student's submission based on the retrieved context below.
+        Evaluate the student's submission using the rubric below. The rubric is clear; you must produce a complete grade in one shot.
 
-        ### RETRIEVED CONTEXT (RUBRIC & SOLUTIONS)
+        ### FULL RUBRIC (AUTHORITATIVE FOR MAX POINTS)
+        {full_rubric_text}
+
+        ### RUBRIC POINTS OUTLINE (AUTO-EXTRACTED — USE THESE MAX VALUES)
+        Total (from rubric): {rubric_total_line}
+        {rubric_outline}
+
+        ### RETRIEVED CONTEXT (SUPPORTING DETAILS)
         {relevant_context}
 
         {ref_part}
@@ -60,28 +154,31 @@ class TAAssistantGrader:
         At most **5 bullet lines** total for: what you checked and how it maps to the rubric. {evidence_hint}
 
         **2) Rubric scorecard (markdown table)**  
-        Build one row per **rubric section or criterion** you can identify from the RETRIEVED CONTEXT (mirror the rubric’s section names and point values when they appear there).
+        Build one row per **question/subquestion** from the RUBRIC POINTS OUTLINE above. The **Max** value must match that outline exactly (do not guess and do not change it).
 
         | Section / criterion | Earned | Max | Feedback (one line only) |
         |---------------------|--------|-----|---------------------------|
         | ...                 | n      | m   | Single sentence ≤ 25 words. |
 
-        - **Earned** and **Max** must be numeric when the rubric states points; if unclear, use `?` for Max and explain in that row’s one-line feedback.
+        - **Earned** must be numeric, between 0 and Max.
+        - **Max** must be numeric and must match the outline; never use `?` for Max.
         - **Feedback** column: **exactly one line per row** — no paragraphs, no bullet lists inside a cell.
 
         **3) Total**  
-        One line: `**Total:** X / Y` where Y is the sum of Max column (or rubric total if stated).
+        One line: `**Total:** X / Y` where Y equals the rubric total if stated; otherwise Y is the sum of Max column.
 
         Do not repeat the student submission or rubric text in your answer. Do not add extra sections beyond 1–3.
         """
 
-    def generate_feedback(self, student_submission, reference_solution=None):
+    def generate_feedback(self, student_submission, full_rubric_text, reference_solution=None):
         """
         Retrieves relevant context then grades.
         Returns (assistant_reply, initial_user_prompt) for conversation history.
         """
         prompt = self.build_initial_grading_prompt(
-            student_submission, reference_solution=reference_solution
+            student_submission,
+            full_rubric_text=full_rubric_text,
+            reference_solution=reference_solution,
         )
         response = self.client.models.generate_content(
             model=self.model_name,

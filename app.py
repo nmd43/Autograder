@@ -172,8 +172,16 @@ if st.button("Generate RAG-Powered Grade"):
                     )
                     grader.index_context(rubric_text, solution_text, replace_existing=True)
                     st.session_state.ref_fingerprint = ref_fp
-                    st.session_state.ref_cache = {"solution_text": solution_text}
+                    st.session_state.ref_cache = {
+                        "rubric_text": rubric_text,
+                        "solution_text": solution_text,
+                    }
             else:
+                rubric_text = (
+                    st.session_state.ref_cache.get("rubric_text")
+                    if st.session_state.ref_cache
+                    else None
+                )
                 solution_text = (
                     st.session_state.ref_cache.get("solution_text")
                     if st.session_state.ref_cache
@@ -183,7 +191,9 @@ if st.button("Generate RAG-Powered Grade"):
             with st.spinner("Retrieving context and generating feedback..."):
                 student_text = combine_uploaded_text(student_files, "STUDENT FILE")
                 feedback, initial_prompt = grader.generate_feedback(
-                    student_text, reference_solution=solution_text
+                    student_text,
+                    full_rubric_text=rubric_text,
+                    reference_solution=solution_text,
                 )
 
             st.session_state.session_ctx = {"student_text": student_text}
