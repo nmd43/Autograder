@@ -21,6 +21,11 @@ The app parses uploaded PDFs, notebooks, and Python files, stores rubric (and op
 
 **Data:** locally, Chroma persists under `./chroma_db`. Cloud instances may reset; re-upload and Generate to re-index if needed.
 
+## Video Links
+
+- **Demo:** [YouTube](https://youtu.be/pMMizRmtHTA)
+- **Technical walkthrough:** [YouTube](https://youtu.be/8B4xXVXcZDQ)
+
 ## Evaluation
 
 **Evaluation data:** the raw evaluation CSVs and source PDF are in `./data/`, and the metrics/plots are computed in `notebooks/evaluation_metrics.ipynb`.
