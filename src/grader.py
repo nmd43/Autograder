@@ -4,7 +4,6 @@ from google import genai
 from google.genai import types
 from src.retriever import TADataRetriever
 
-# Gemini expects "model" for assistant turns in multi-turn contents.
 _ASSISTANT_ROLE = "model"
 
 
@@ -16,7 +15,6 @@ def _extract_rubric_points(full_rubric_text: str):
     text = full_rubric_text or ""
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
 
-    # Total points line (most rubrics include this explicitly).
     total_max = None
     total_patterns = [
         r"\bTOTAL\s*(POINTS|PTS)\b[^0-9]{0,20}(\d+)\b",
@@ -32,7 +30,6 @@ def _extract_rubric_points(full_rubric_text: str):
         if total_max is not None:
             break
 
-    # Question / Part / Subpart patterns.
     label_patterns = [
         r"\b(Q(?:UESTION)?\s*\d+)\b",
         r"\b(PART\s*[A-Z])\b",
@@ -42,7 +39,7 @@ def _extract_rubric_points(full_rubric_text: str):
     pts_patterns = [
         r"\((\d+)\s*(?:PTS?|POINTS?)\)",
         r"\b(\d+)\s*(?:PTS?|POINTS?)\b",
-        r"\b(\d+)\s*/\s*(\d+)\b",  # earned/max style; we use max
+        r"\b(\d+)\s*/\s*(\d+)\b",
     ]
 
     rows = []
@@ -77,7 +74,6 @@ def _extract_rubric_points(full_rubric_text: str):
         seen.add(key)
         rows.append({"label": label, "max_points": max_pts})
 
-    # Preserve order of appearance; if the rubric is Q1/Q2-based, that order matters.
     return rows, total_max
 
 
@@ -89,16 +85,10 @@ class TAAssistantGrader:
         self.retriever = TADataRetriever()
 
     def index_context(self, rubric_text, solution_text=None, replace_existing=True):
-        """
-        Populates the vector database. Reference solution is now optional.
-        Hits 'Data Collection/Preprocessing' (10 pts).
-        """
+        """Index rubric text and optional reference solution into the vector store."""
         if replace_existing:
             self.retriever.clear_index()
-        # Always index the rubric
         self.retriever.add_to_index(rubric_text, {"type": "rubric"})
-        
-        # Only index the solution if it exists (Safeguard for RAG logic)
         if solution_text and solution_text.strip():
             self.retriever.add_to_index(solution_text, {"type": "solution"})
 
@@ -206,7 +196,7 @@ class TAAssistantGrader:
         return messages[:2] + rest
 
     def messages_to_contents(self, messages, student_submission):
-        """Maps stored chat dicts to Gemini Content; augments follow-up user turns with fresh RAG."""
+        """Convert chat history to Gemini contents; augment follow-up users with retrieval."""
         contents = []
         for i, m in enumerate(messages):
             text = m["content"]

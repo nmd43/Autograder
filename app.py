@@ -21,7 +21,6 @@ def _init_session_state():
         st.session_state.ref_fingerprint = None
     if "ref_cache" not in st.session_state:
         st.session_state.ref_cache = None
-    # Bump to remount st.file_uploader and clear widget file list (Streamlit has no direct clear API).
     for _k in ("rubric_upload_id", "solution_upload_id", "student_upload_id"):
         if _k not in st.session_state:
             st.session_state[_k] = 0
@@ -75,7 +74,7 @@ def combine_uploaded_text(uploaded_list, section_title):
 with st.sidebar:
     st.header("Configuration")
     api_key = st.text_input("Gemini API Key", type="password")
-    model_choice = st.selectbox("Select Model", ["gemini-2.5-flash", "gemini-1.5-pro"])
+    model_choice = st.selectbox("Select Model", ["gemini-2.5-flash", "gemini-3.1-pro-preview"])
     st.slider(
         "Follow-up turns kept in model context",
         min_value=2,
@@ -208,8 +207,10 @@ if st.button("Generate RAG-Powered Grade"):
 st.divider()
 st.subheader("Grading conversation")
 st.caption(
-    "History is kept until you start the next student. Follow-up questions reuse the "
-    "current submission and refresh rubric retrieval for each message."
+    "History is kept until you start the next student. Each follow-up is sent to the model "
+    "together with the first grading exchange (full prompt + grade) and your later Q&A; "
+    "only the most recent follow-up turns are kept beyond the sidebar limit, so very long threads "
+    "drop middle messages but not the initial grade."
 )
 
 if st.session_state.chat_messages:
@@ -246,6 +247,7 @@ if prompt := st.chat_input(
             st.session_state.chat_messages.append(
                 {"role": "assistant", "content": reply}
             )
+            st.rerun()
         except Exception as e:
             st.error(f"An error occurred: {e}")
             if (
@@ -256,4 +258,4 @@ if prompt := st.chat_input(
                 st.session_state.chat_messages.pop()
 
 st.divider()
-st.caption("CS 372 Final Project - Modular RAG Grading System")
+st.caption("RAG-assisted TA grading — Chroma + Gemini")

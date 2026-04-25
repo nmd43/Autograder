@@ -1,8 +1,8 @@
-import chromadb
-from chromadb.utils import embedding_functions
 import uuid
 
-# MS MARCO-trained cross-encoder; lazy-loaded so import stays light.
+import chromadb
+from chromadb.utils import embedding_functions
+
 _CROSS_ENCODER = None
 _CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
@@ -17,21 +17,16 @@ def _get_cross_encoder():
 
 
 class TADataRetriever:
-    """Manages the vector database for custom RAG logic (10 pts)."""
-    
+    """ChromaDB-backed vector store for rubric and reference-solution retrieval."""
+
     def __init__(self, persist_directory="./chroma_db"):
-        # Initialize the persistent client (Following Directions - 1 pt)
         self.client = chromadb.PersistentClient(path=persist_directory)
-        
-        # Using a high-quality open-source embedding model (Sentence Embeddings - 5 pts)
         self.embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name="all-MiniLM-L6-v2"
         )
-        
-        # Create or get a collection for your data
         self.collection = self.client.get_or_create_collection(
             name="grading_context",
-            embedding_function=self.embed_fn
+            embedding_function=self.embed_fn,
         )
 
     def clear_index(self):
@@ -42,8 +37,7 @@ class TADataRetriever:
             self.collection.delete(ids=ids)
 
     def add_to_index(self, text, metadata):
-        """Chunks text and adds it to the vector store (Substantive Preprocessing - 7 pts)."""
-        # Simple sliding window chunking strategy
+        """Chunk text, embed, and add documents to the collection."""
         chunks = self._chunk_text(text, size=500, overlap=100)
         
         ids = [str(uuid.uuid4()) for _ in chunks]
@@ -56,17 +50,14 @@ class TADataRetriever:
         )
 
     def _chunk_text(self, text, size, overlap):
-        """Custom chunking strategy logic."""
+        """Fixed-size overlapping windows over character spans."""
         chunks = []
         for i in range(0, len(text), size - overlap):
             chunks.append(text[i:i + size])
         return chunks
 
     def retrieve_relevant_context(self, query, top_k=3, candidate_k=24):
-        """
-        Two-stage retrieval: dense similarity (Chroma), then cross-encoder reranking.
-        Improves which rubric/solution passages surface for grading-style queries.
-        """
+        """Retrieve Chroma candidates by embedding similarity, then rerank with a cross-encoder."""
         n_docs = self.collection.count()
         if n_docs == 0:
             return ""
