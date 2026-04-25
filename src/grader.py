@@ -93,9 +93,12 @@ class TAAssistantGrader:
             self.retriever.add_to_index(solution_text, {"type": "solution"})
 
     def _reference_block(self, reference_solution):
-        if reference_solution:
+        if reference_solution and str(reference_solution).strip():
             ref_part = f"### REFERENCE SOLUTION:\n{reference_solution}\n"
-            instruction_hint = "- Use the PROVIDED REFERENCE SOLUTION to verify logic and edge cases."
+            instruction_hint = (
+                "- The reference solution is **ground truth for correctness**: compare the student's "
+                "work to it when judging implementation, logic, numeric answers, APIs, and required outputs."
+            )
         else:
             ref_part = "### REFERENCE SOLUTION:\n[Not Provided]\n"
             instruction_hint = "- No reference solution provided. Rely on the RUBRIC and general CS best practices."
@@ -118,6 +121,17 @@ class TAAssistantGrader:
         rubric_total_line = (
             f"{rubric_total} pts" if isinstance(rubric_total, int) else "[Not detected]"
         )
+        has_ref = bool(reference_solution and str(reference_solution).strip())
+        reference_rules = ""
+        if has_ref:
+            reference_rules = """
+        ### HOW TO USE THE REFERENCE (WITH THE RUBRIC)
+        A reference solution is included above. For **every** rubric row:
+        - The **FULL RUBRIC** remains **authoritative for each row's Max** and for any requirements the reference does not show (e.g. write-ups, plots, filenames, course policies).
+        - For rows about **code, derivations, or measurable results**, use the reference as the **primary standard** for what "correct" means: prefer **systematic comparison to the reference** over guessing.
+        - If the student is **substantively equivalent** to the reference on everything that row demands, set **Earned = Max** for that row. If only partly aligned, assign **partial Earned** consistent with the rubric wording and how far the work departs from the reference.
+        - Do **not** dock points for cosmetic-only differences (e.g. variable names, formatting) if behavior and required outputs match the reference and the rubric does not forbid them.
+        """
         return f"""
         You are an expert Teaching Assistant.
         Evaluate the student's submission using the rubric below. The rubric is clear; you must produce a complete grade in one shot.
@@ -133,6 +147,7 @@ class TAAssistantGrader:
         {relevant_context}
 
         {ref_part}
+        {reference_rules}
 
         ### STUDENT SUBMISSION
         {student_submission}
@@ -221,7 +236,8 @@ class TAAssistantGrader:
                         "### RESPONSE STYLE\n"
                         "Answer briefly: at most 3 short bullets if needed, then if scores change use the same "
                         "markdown table (Section | Earned | Max | one-line feedback) and one-line **Total:** X / Y. "
-                        "No paragraphs per rubric row."
+                        "No paragraphs per rubric row. If a reference solution appeared in the initial grading "
+                        "message, keep using it as ground truth for implementation correctness when adjusting scores."
                     )
                 contents.append(
                     types.Content(role="user", parts=[types.Part(text=text)])

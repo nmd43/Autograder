@@ -15,6 +15,9 @@ ENV/
 # App data
 chroma_db/
 
+# Jupyter
+.ipynb_checkpoints/
+
 # IDE / OS
 .idea/
 .vscode/

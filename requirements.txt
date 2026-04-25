@@ -13,5 +13,8 @@ nbformat>=5.9.0
 # NumPy: keep flexible; Chroma/torch stacks vary by platform
 numpy>=1.26.0,<3.0.0
 
+# Notebooks (evaluation_metrics.ipynb optional scatter plot)
+matplotlib>=3.7.0,<4.0.0
+
 # Protobuf: Chroma/gRPC stacks often need a modern pin on Windows
 protobuf>=4.25.0,<6.0.0

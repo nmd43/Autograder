@@ -206,12 +206,6 @@ if st.button("Generate RAG-Powered Grade"):
 
 st.divider()
 st.subheader("Grading conversation")
-st.caption(
-    "History is kept until you start the next student. Each follow-up is sent to the model "
-    "together with the first grading exchange (full prompt + grade) and your later Q&A; "
-    "only the most recent follow-up turns are kept beyond the sidebar limit, so very long threads "
-    "drop middle messages but not the initial grade."
-)
 
 if st.session_state.chat_messages:
     for i, msg in enumerate(st.session_state.chat_messages):
