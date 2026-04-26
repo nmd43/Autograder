@@ -4,6 +4,8 @@
 
 This is implemented as a **Streamlit** app that combines **retrieval-augmented generation** (Chroma + sentence embeddings + cross-encoder reranking) with **Google Gemini** for generation, and keeps a **multi-turn** grading conversation with session-managed history.
 
+**Project Link:** [https://ta-autograder.streamlit.app/](https://ta-autograder.streamlit.app/)
+
 ## What it Does
 
 The app parses uploaded PDFs, notebooks, and Python files, stores rubric (and optional reference solution) chunks in a local vector database for semantic retrieval, and sends the **full rubric text** into the first grading prompt so per-question and sub-question **Max** points match what the rubric states. Retrieval still supplies supporting snippets for context. You can grade multiple students in a session: **Done — next student** clears chat and student uploads while keeping the indexed rubric; **Clear rubric & solution from index** wipes the vector store and resets all upload widgets when the assignment changes. A chat area supports follow-up questions while trimming history for context limits.
