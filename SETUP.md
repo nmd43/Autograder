@@ -13,6 +13,7 @@ This project is a **Streamlit** app (`app.py`) that calls the **Google Gemini AP
 
 If `streamlit run app.py` fails on your machine (Python/path/firewall issues), use **Streamlit Community Cloud** and deploy straight from the public repository:
 
+**Project Link:** [https://ta-autograder.streamlit.app/](https://ta-autograder.streamlit.app/)
 **Repository:** [https://github.com/nmd43/Autograder](https://github.com/nmd43/Autograder)
 
 ### Steps for users
