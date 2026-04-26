@@ -8,6 +8,8 @@ This is implemented as a **Streamlit** app that combines **retrieval-augmented g
 
 The app parses uploaded PDFs, notebooks, and Python files, stores rubric (and optional reference solution) chunks in a local vector database for semantic retrieval, and sends the **full rubric text** into the first grading prompt so per-question and sub-question **Max** points match what the rubric states. Retrieval still supplies supporting snippets for context. You can grade multiple students in a session: **Done — next student** clears chat and student uploads while keeping the indexed rubric; **Clear rubric & solution from index** wipes the vector store and resets all upload widgets when the assignment changes. A chat area supports follow-up questions while trimming history for context limits.
 
+<img width="1886" height="714" alt="image" src="https://github.com/user-attachments/assets/246c572c-6a5f-480d-b562-61d98b7c9d78" />
+
 ## Quick Start
 
 **Installation, Streamlit Community Cloud deployment, local fallback, and grader testing:** see **[SETUP.md](SETUP.md)**.
@@ -37,6 +39,7 @@ On **10 ML HW5** submissions (100-point scale) and **10 Algorithms HW9** submiss
 
 Qualitatively, the **first grading attempt after a new rubric** tended to take longest (consistent with heavier indexing and context). I noted the model **struggles to award nuanced partial credit** when an earlier part of the solution is wrong and downstream work depends on it, and that it can **follow the written rubric very literally**—so work that is almost the same as the sample solution may still miss full credit if it does not **explicitly** hit rubric-visible items. Together with the metrics above, that suggests the pipeline is strong for **ranking and coarse totals** but still needs human judgment for **fine-grained partial credit** and **borderline matches reference** cases.
 
----
+<img width="482" height="490" alt="image" src="https://github.com/user-attachments/assets/37866f9a-4317-4a72-b939-4301f6484686" />
+<img width="990" height="413" alt="image" src="https://github.com/user-attachments/assets/fe70e045-3c68-45cb-b3ea-017eca9c36db" />
 
-For course deliverables, add **screenshots** of uploads, a completed grade, and a follow-up chat turn.
+---
