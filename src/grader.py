@@ -1,3 +1,5 @@
+"""Gemini-based grading + follow-up chat logic (prompting + output contract)."""
+
 import re
 
 from google import genai
@@ -78,6 +80,19 @@ def _extract_rubric_points(full_rubric_text: str):
 
 
 class TAAssistantGrader:
+    """
+    High-level grading orchestration (RAG + Gemini).
+
+    Responsibilities:
+    - Index rubric and optional reference solution into a retriever (Chroma-backed RAG).
+    - Construct first-pass grading prompts that enforce a **structured scorecard** output.
+    - Construct follow-up chat turns that refresh retrieval and trim message history.
+
+    AI-assisted authorship note:
+    Per `ATTRIBUTION.md`, the grading prompt structure and Gemini API integration in this class
+    were written/refactored with help from AI coding assistants (primarily Cursor), then iterated
+    on using real rubric formats and UI constraints (table contract, totals, trimmed chat history).
+    """
     def __init__(self, api_key, model_name="gemini-2.5-flash"):
         """Initializes the Gemini client and the RAG retriever."""
         self.client = genai.Client(api_key=api_key)
@@ -85,7 +100,12 @@ class TAAssistantGrader:
         self.retriever = TADataRetriever()
 
     def index_context(self, rubric_text, solution_text=None, replace_existing=True):
-        """Index rubric text and optional reference solution into the vector store."""
+        """
+        Index rubric text and optional reference solution into the vector store.
+
+        This is the RAG "ingestion" step: later grading and follow-up queries retrieve only
+        a small set of relevant chunks for context.
+        """
         if replace_existing:
             self.retriever.clear_index()
         self.retriever.add_to_index(rubric_text, {"type": "rubric"})
@@ -110,7 +130,14 @@ class TAAssistantGrader:
         full_rubric_text,
         reference_solution=None,
     ):
-        """Full first-turn user message (stored in chat history for multi-turn continuity)."""
+        """
+        Build the full first-turn grading prompt.
+
+        Design intent:
+        - Include the **FULL RUBRIC** to avoid missing point caps / criteria.
+        - Add a short, retrieved-context block for supporting evidence.
+        - Enforce a strict output contract (short reasoning + rubric table + `**Total:** X / Y`).
+        """
         relevant_context = self.retriever.retrieve_relevant_context(student_submission)
         ref_part, instruction_hint = self._reference_block(reference_solution)
         evidence_hint = instruction_hint.lstrip("- ").strip()
@@ -177,8 +204,11 @@ class TAAssistantGrader:
 
     def generate_feedback(self, student_submission, full_rubric_text, reference_solution=None):
         """
-        Retrieves relevant context then grades.
-        Returns (assistant_reply, initial_user_prompt) for conversation history.
+        Generate the first-pass grade from rubric (+ optional reference) and student submission.
+
+        Returns (assistant_reply, initial_user_prompt) so the UI can:
+        - display the assistant reply, and
+        - store the initial prompt in chat history for follow-up continuity.
         """
         prompt = self.build_initial_grading_prompt(
             student_submission,

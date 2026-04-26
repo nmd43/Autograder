@@ -1,3 +1,5 @@
+"""Chroma-backed retrieval utilities (RAG) used by the grader."""
+
 import uuid
 
 import chromadb
@@ -17,7 +19,14 @@ def _get_cross_encoder():
 
 
 class TADataRetriever:
-    """ChromaDB-backed vector store for rubric and reference-solution retrieval."""
+    """
+    ChromaDB-backed vector store for rubric and reference-solution retrieval.
+
+    AI-assisted authorship note:
+    The Chroma wiring, chunking, and reranking loop in this class were
+    written/refactored with help from AI coding assistants (primarily Cursor), then tuned for
+    code-heavy submissions where only a subset of text is actually rubric-relevant.
+    """
 
     def __init__(self, persist_directory="./chroma_db"):
         self.client = chromadb.PersistentClient(path=persist_directory)
